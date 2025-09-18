@@ -333,3 +333,45 @@ body {
     width: 98vw;
   }
 }
+.priority-lane {
+  min-height: 340px;
+  transition: background 0.2s;
+}
+.priority-high { border: 2px solid #e2474b; }
+.priority-medium { border: 2px solid #ff9c00; }
+.priority-low { border: 2px solid #159a33; }
+
+.priority-row {
+  margin-bottom: 9px;
+  background: #f7f7ff;
+}
+.todo-list {
+  margin: 12px 0;
+  padding: 19px 13px;
+  border-radius: 10px;
+  min-width: 320px;
+  max-width: 450px;
+}
+@media (max-width: 700px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr!important;
+    gap: 14px;
+  }
+  .todo-list {
+    min-width: 90vw;
+    max-width: 100vw;
+  }
+}
+.todo-task .btn {
+  padding: 3px 10px;
+  font-size: 0.91rem;
+  min-width: 60px;
+  box-sizing: border-box;
+}
+.flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+
