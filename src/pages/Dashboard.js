@@ -10,6 +10,7 @@ import {
   doc,
   deleteDoc,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
@@ -23,14 +24,14 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) setUser(firebaseUser);
       else {
         setUser(null);
         navigate("/");
       }
     });
-    return () => unsubscribeAuth();
+    return unsubscribe;
   }, [navigate]);
 
   useEffect(() => {
@@ -44,15 +45,15 @@ export default function Dashboard() {
       setLists(fetchedLists);
 
       fetchedLists.forEach((list) => {
-        const taskQuery = query(
+        const tasksQuery = query(
           collection(db, "users", user.uid, "todoLists", list.id, "tasks")
         );
-        onSnapshot(taskQuery, (taskSnapshot) => {
-          const tasks = [];
-          taskSnapshot.forEach((taskDoc) =>
-            tasks.push({ id: taskDoc.id, ...taskDoc.data() })
-          );
-          setTasksMap((prev) => ({ ...prev, [list.id]: tasks }));
+        onSnapshot(tasksQuery, (tasksSnapshot) => {
+          const tasksArr = [];
+          tasksSnapshot.forEach((taskDoc) => {
+            tasksArr.push({ id: taskDoc.id, ...taskDoc.data() });
+          });
+          setTasksMap((prev) => ({ ...prev, [list.id]: tasksArr }));
         });
       });
     });
@@ -99,18 +100,23 @@ export default function Dashboard() {
     );
   };
 
-  // Upar buttons par drop karte hi task ki priority update ho jaaye
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/");
+  };
+
   const handleDragEnd = async (result) => {
     if (!user) return;
-    const { draggableId, source, destination } = result;
+    const { source, destination, draggableId } = result;
+
     if (!destination) return;
 
-    const toPriority = destination.droppableId;
-    if (PRIORITIES.includes(toPriority)) {
-      for (let list of lists) {
-        const taskArr = tasksMap[list.id] || [];
-        const idx = taskArr.findIndex((t) => t.id === draggableId);
-        if (idx > -1) {
+    if (PRIORITIES.includes(destination.droppableId)) {
+      for (const list of lists) {
+        const taskIndex = tasksMap[list.id]?.findIndex(
+          (t) => t.id === draggableId
+        );
+        if (taskIndex !== -1) {
           await setDoc(
             doc(
               db,
@@ -121,18 +127,52 @@ export default function Dashboard() {
               "tasks",
               draggableId
             ),
-            { priority: toPriority },
+            { priority: destination.droppableId },
             { merge: true }
           );
           break;
         }
       }
+      return;
     }
-  };
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    navigate("/");
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    ) {
+      return;
+    }
+
+    const sourceTasks = tasksMap[source.droppableId] || [];
+    const movedTask = sourceTasks.find((t) => t.id === draggableId);
+    if (!movedTask) return;
+
+    const batch = writeBatch(db);
+
+    const sourceDocRef = doc(
+      db,
+      "users",
+      user.uid,
+      "todoLists",
+      source.droppableId,
+      "tasks",
+      draggableId
+    );
+    batch.delete(sourceDocRef);
+
+    const destDocRef = doc(
+      collection(
+        db,
+        "users",
+        user.uid,
+        "todoLists",
+        destination.droppableId,
+        "tasks"
+      )
+    );
+    batch.set(destDocRef, { ...movedTask, index: destination.index });
+
+    await batch.commit();
   };
 
   return (
@@ -146,6 +186,7 @@ export default function Dashboard() {
           Logout
         </button>
       </div>
+
       <form onSubmit={addList} className="dashboard-form">
         <input
           type="text"
@@ -154,10 +195,9 @@ export default function Dashboard() {
           value={newList}
           onChange={(e) => setNewList(e.target.value)}
         />
-        <button className="btn btn-primary">Create List</button>
+        <button className="btn btn-primary">Create</button>
       </form>
 
-      {/* Priority Drop Zones */}
       <DragDropContext onDragEnd={handleDragEnd}>
         <div
           style={{
@@ -171,8 +211,8 @@ export default function Dashboard() {
             <Droppable droppableId={priority} key={priority}>
               {(provided) => (
                 <div
-                  ref={provided.innerRef}
                   {...provided.droppableProps}
+                  ref={provided.innerRef}
                   style={{
                     border: `2px solid ${
                       priority === "High"
@@ -185,7 +225,6 @@ export default function Dashboard() {
                     minHeight: 70,
                     borderRadius: 12,
                     background: "#fff",
-                    alignItems: "center",
                     textAlign: "center",
                     padding: "10px 0",
                   }}
@@ -204,13 +243,7 @@ export default function Dashboard() {
                   >
                     {priority} Priority
                   </div>
-                  <div
-                    style={{
-                      fontSize: "0.96rem",
-                      color: "#555",
-                      fontWeight: 400,
-                    }}
-                  >
+                  <div style={{ fontSize: "0.96rem", color: "#555" }}>
                     Drop here to change
                   </div>
                   {provided.placeholder}
@@ -219,35 +252,44 @@ export default function Dashboard() {
             </Droppable>
           ))}
         </div>
-        {/* Lists */}
+
         <div className="dashboard-grid">
           {lists.map((list) => (
             <Droppable droppableId={list.id} key={list.id}>
               {(provided) => (
                 <div
-                  ref={provided.innerRef}
                   {...provided.droppableProps}
+                  ref={provided.innerRef}
                   className="todo-list"
                   style={{
-                    margin: "0 7px 15px 7px",
-                    minWidth: 300,
-                    maxWidth: 400,
+                    margin: "0 7px 15px",
                     background: "#f8f8fc",
+                    borderRadius: 12,
+                    padding: 12,
                   }}
                 >
                   <div
-                    style={{ display: "flex", justifyContent: "space-between" }}
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "1.1rem",
+                      marginBottom: 8,
+                    }}
                   >
-                    <h2 className="todo-list-title">{list.name}</h2>
+                    {list.name}
                   </div>
                   <AddTaskForm listId={list.id} addTask={addTask} />
-                  {(tasksMap[list.id] || []).map((task, idx) => (
-                    <Draggable key={task.id} draggableId={task.id} index={idx}>
+
+                  {(tasksMap[list.id] || []).map((task, index) => (
+                    <Draggable
+                      draggableId={task.id}
+                      index={index}
+                      key={task.id}
+                    >
                       {(provided) => (
                         <div
-                          ref={provided.innerRef}
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
+                          ref={provided.innerRef}
                           className={`todo-task${
                             task.completed ? " completed" : ""
                           }`}
@@ -255,53 +297,59 @@ export default function Dashboard() {
                             ...provided.draggableProps.style,
                             background: "#fff",
                             borderRadius: 8,
-                            boxShadow: "0 1px 6px #0001",
-                            padding: "9px 8px",
-                            marginBottom: 8,
+                            padding: 10,
+                            marginBottom: 10,
+                            boxShadow: "0 1px 6px rgb(0 0 0 / 0.15)",
+                            cursor: "grab",
+                            userSelect: "none",
                           }}
                         >
-                          <div style={{ fontWeight: 600 }}>{task.title}</div>
-                          <div style={{ fontSize: "0.96rem", color: "#555" }}>
+                          <div
+                            style={{ fontWeight: 600, wordBreak: "break-word" }}
+                          >
+                            {task.title}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              color: "#666",
+                              marginBottom: 8,
+                            }}
+                          >
                             {task.description}
                           </div>
-                          <div style={{ fontSize: "0.88rem", color: "#888" }}>
+                          <div style={{ fontSize: 12, color: "#999" }}>
                             Due: {task.dueDate || "No date"}
                             <br />
                             Priority:{" "}
                             <span
                               style={{
+                                fontWeight: "bold",
                                 color:
                                   task.priority === "High"
                                     ? "#e2474b"
                                     : task.priority === "Medium"
                                     ? "#ff9c00"
                                     : "#159a33",
-                                fontWeight: 600,
                               }}
                             >
                               {task.priority}
                             </span>
                           </div>
-                          <div className="flex gap-2" style={{ marginTop: 5 }}>
+                          <div
+                            style={{ marginTop: 10, display: "flex", gap: 6 }}
+                          >
                             <button
-                              className="btn btn-primary text-sm"
-                              style={{
-                                fontSize: "0.87rem",
-                                padding: "2px 9px",
-                              }}
                               onClick={() =>
                                 toggleComplete(list.id, task.id, task.completed)
                               }
+                              className="btn btn-primary btn-sm"
                             >
                               {task.completed ? "Undo" : "Done"}
                             </button>
                             <button
-                              className="btn btn-danger text-sm"
-                              style={{
-                                fontSize: "0.83rem",
-                                padding: "2px 9px",
-                              }}
                               onClick={() => deleteTask(list.id, task.id)}
+                              className="btn btn-danger btn-sm"
                             >
                               Delete
                             </button>
@@ -329,10 +377,11 @@ function AddTaskForm({ listId, addTask }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!taskTitle.trim()) return;
-    await addTask(listId, {
+    await addTask({
       title: taskTitle,
       description: taskDesc,
       dueDate: taskDate,
+      listId,
     });
     setTaskTitle("");
     setTaskDesc("");
@@ -340,37 +389,31 @@ function AddTaskForm({ listId, addTask }) {
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-2 mb-2"
-      style={{ marginBottom: 7 }}
-    >
+    <form onSubmit={handleSubmit} className="form-main">
       <input
         type="text"
-        placeholder="Task title"
         className="input"
-        style={{ fontSize: "1rem", minHeight: 32 }}
+        placeholder="Task title"
         value={taskTitle}
         onChange={(e) => setTaskTitle(e.target.value)}
       />
       <input
         type="text"
-        placeholder="Description"
         className="input"
-        style={{ fontSize: "0.93rem", minHeight: 26 }}
+        placeholder="Description"
         value={taskDesc}
         onChange={(e) => setTaskDesc(e.target.value)}
       />
       <input
         type="date"
         className="input"
-        style={{ fontSize: "0.93rem", minWidth: 0, padding: "5px" }}
         value={taskDate}
         onChange={(e) => setTaskDate(e.target.value)}
       />
       <button
+        type="submit"
         className="btn btn-success"
-        style={{ padding: "7px", width: 98, fontSize: "0.93rem" }}
+        style={{ marginTop: 8, width: 100 }}
       >
         Add Task
       </button>
