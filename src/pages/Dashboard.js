@@ -369,6 +369,58 @@ export default function Dashboard() {
   );
 }
 
+// function AddTaskForm({ listId, addTask }) {
+//   const [taskTitle, setTaskTitle] = useState("");
+//   const [taskDesc, setTaskDesc] = useState("");
+//   const [taskDate, setTaskDate] = useState("");
+
+//   const handleSubmit = async (e) => {
+//     e.preventDefault();
+//     if (!taskTitle.trim()) return;
+//     await addTask({
+//       title: taskTitle,
+//       description: taskDesc,
+//       dueDate: taskDate,
+//       listId,
+//     });
+//     setTaskTitle("");
+//     setTaskDesc("");
+//     setTaskDate("");
+//   };
+
+//   return (
+//     <form onSubmit={handleSubmit} className="form-main">
+//       <input
+//         type="text"
+//         className="input"
+//         placeholder="Task title"
+//         value={taskTitle}
+//         onChange={(e) => setTaskTitle(e.target.value)}
+//       />
+//       <input
+//         type="text"
+//         className="input"
+//         placeholder="Description"
+//         value={taskDesc}
+//         onChange={(e) => setTaskDesc(e.target.value)}
+//       />
+//       <input
+//         type="date"
+//         className="input"
+//         value={taskDate}
+//         onChange={(e) => setTaskDate(e.target.value)}
+//       />
+//       <button
+//         type="submit"
+//         className="btn btn-success"
+//         style={{ marginTop: 8, width: 100 }}
+//       >
+//         Add Task
+//       </button>
+//     </form>
+//   );
+// }
+
 function AddTaskForm({ listId, addTask }) {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
@@ -377,11 +429,10 @@ function AddTaskForm({ listId, addTask }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!taskTitle.trim()) return;
-    await addTask({
+    await addTask(listId, {
       title: taskTitle,
       description: taskDesc,
       dueDate: taskDate,
-      listId,
     });
     setTaskTitle("");
     setTaskDesc("");
